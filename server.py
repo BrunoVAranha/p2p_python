@@ -21,11 +21,13 @@ def join(port_input, files):
     client_socket, addr = server_socket.accept()
     client_data[port_input] = files
     join_ok = f'Sou peer {port_input} com arquivos : {client_data[port_input]}'
+    print(f'Peer 127.0.0.1:{port_input} adicionado com arquivos {client_data[port_input]}.')
     return join_ok
 
 
 # Método responsável por buscar um arquivo no catálogo de peer -> arquivos
-def search(file):
+def search(file, port_input):
+    print(f'Peer 127.0.0.1:{port_input} solicitou arquivo {file}.')
     keys = []
     for key, values in client_data.items():
         if file in values:

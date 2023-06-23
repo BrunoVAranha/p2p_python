@@ -7,8 +7,7 @@ import threading
 rpc_client = xmlrpc.client.ServerProxy('http://localhost:9000/')
 # # Socket que se conecta ao servidor
 client_server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-# Socket que irá se conectar a outro client(peer) para fazer download
-p2p_client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
 # Input que recebe a porta que o cliente usará para se conectar a um peer
 port_input = int(input('Insira uma porta para seu cliente se conectar com outro peer: '))
 # Input que recebe o caminho dos arquivos que o client possui
@@ -17,6 +16,7 @@ folder_path = input('Qual a pasta com seus arquivos? (peer1, peer2...: ')
 
 # Método executado por uma thread em background crianco um socket para receber requisições de outros peers
 def peer_server_thread():
+    # Criação do socket que enviará o arquivo
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.bind(('localhost', port_input))
     server_socket.listen(3)
@@ -25,9 +25,7 @@ def peer_server_thread():
         try:
             # Aceitar a conexão de outro peer
             client_socket, client_address = server_socket.accept()
-            print('Received connection from:', client_address)
 
-            client_socket.send(b'Connected to server')
             file = client_socket.recv(1024).decode()
 
             with client_socket:
@@ -35,7 +33,6 @@ def peer_server_thread():
                 with open(f'{folder_path}/{file}.mp4', 'rb') as file:
                     sendfile = file.read()
                 client_socket.sendall(sendfile)
-            client_socket.close()
         except socket.error:
             pass
 
@@ -56,39 +53,41 @@ def run_client():
 
     file_list = remove_extension(os.listdir(folder_path))
 
-    print(file_list)
-
     # Chamada do método join para se cadastrar no servidor
     join_message = rpc_client.join(port_input, file_list)
     print(join_message)
 
-    # Chamada do método search para buscar um arquiva na rede de peers
-    search_file = input('Insira o nome do arquivo desejado: ')
-    search_peer = rpc_client.search(search_file)
-    if search_peer is None:
-        print('Nenhum peer possui este arquivo.')
-
-    else:
-        print(f'peers com o arquivo solicitado: {search_peer}')
-        download = input('Deseja fazer download do arquivo? (Y/N): ')
-        if download == 'Y':
-            print(search_peer[0])
-            p2p_client_socket.connect(('localhost', search_peer[0]))
-            data = p2p_client_socket.recv(1024).decode()
-            print(data)
-            p2p_client_socket.send(search_file.encode())
-            # Abrir arquivo para transefir (escrever) bytes
-            with p2p_client_socket, open(f'{folder_path}/{search_file}.mp4', 'wb') as file:
-                while True:
-                    recvfile = p2p_client_socket.recv(4096)
-                    if not recvfile:
-                        break
-                    file.write(recvfile)
-            print("File has been received.")
-            # Atualizar a lista de arquivos
-            file_list = remove_extension(os.listdir(folder_path))
-            rpc_client.update(port_input, file_list)
-
+    # inicio do laço que permite o peer baixar arquivos
+    while True:
+        # Socket que irá se conectar a outro client(peer) para fazer download
+        p2p_client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        search_file = input('Insira o nome do arquivo desejado, ou <END> para encerrar a aplicação: ')
+        if search_file == '<END>':
+            break
+        # Chamada do método search para buscar um arquiva na rede de peers
+        search_peer = rpc_client.search(search_file, port_input)
+        if search_peer is None:
+            print('Nenhum peer possui este arquivo.')
+            continue
+        else:
+            print(f'peers com o arquivo solicitado: {search_peer}')
+            download = input('Deseja fazer download do arquivo? (Y/N): ')
+            if download == 'Y':
+                p2p_client_socket.connect(('localhost', search_peer[0]))
+                # Enviar o nome do arquivo para ser baixado
+                p2p_client_socket.send(search_file.encode())
+                # Abrir arquivo para transefir (escrever) bytes
+                with p2p_client_socket, open(f'{folder_path}/{search_file}.mp4', 'wb') as file:
+                    while True:
+                        recvfile = p2p_client_socket.recv(4096)
+                        if not recvfile:
+                            break
+                        file.write(recvfile)
+                print(f'Arquivo {search_file} baixado com sucesso na pasta {folder_path}')
+                # Atualizar a lista de arquivos
+                file_list = remove_extension(os.listdir(folder_path))
+                rpc_client.update(port_input, file_list)
+                p2p_client_socket.close()
     client_server_socket.close()
 
 
